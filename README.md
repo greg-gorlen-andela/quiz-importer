@@ -2,6 +2,8 @@
 
 This tool imports unstructured input to a Qualified quiz. It uses OpenAI to convert the input to Qualified's quiz format, so inaccuracies can occur. Be sure to check the results and use at your own risk.
 
+For now, it only handles multiple choice questions with one correct answer.
+
 [Try it](https://greg-gorlen-andela.github.io/quiz-importer/)
 
 ### TODO
@@ -9,7 +11,9 @@ This tool imports unstructured input to a Qualified quiz. It uses OpenAI to conv
 - Stream JSON as it's created by OpenAI
 - Allow appending to an existing quiz
 - Add more meta fields like difficulty
-- set query params on submit
+- Add support for other quiz types than multiple choice
+- cancel button
+- set query params on submit or keys to localhost
 - handle color mode changes
 - Break import into 2 steps and make json contenteditable
 - use Andela styling

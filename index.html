@@ -174,6 +174,7 @@ Correct Answer: c) To pass data from parent to child components</textarea
 
       const status = document.querySelector(".status");
       const submitBtn = document.querySelector("[type='submit']");
+      const pre = document.querySelector("pre");
 
       document
         .querySelector("form")
@@ -182,21 +183,34 @@ Correct Answer: c) To pass data from parent to child components</textarea
           const openAIKey = event.target.elements["openai-key"].value;
           const qualifiedKey = event.target.elements["qualified-key"].value;
           const quizId = event.target.elements["qualified-key"].value;
-          const quiz = event.target.elements["quiz"].textContent;
+          const quiz = event.target.elements["quiz"].value;
           status.textContent = "Converting quiz to Qualified API-ready JSON...";
           submitBtn.disabled = true;
 
           try {
-            const parsedQuiz = await parseQuizWithOpenAI(quiz, openAIKey);
-            const indented = JSON.stringify(parsedQuiz, null, 2);
+            const onContent = (result) => {
+              const highlighted = jsonFormatHighlight(
+                result,
+                darkMode.matches ? darkJSON : lightJSON,
+              );
+              pre.innerHTML = highlighted;
+            };
+
+            pre.textContent = "";
+            const parsedQuiz = await parseQuizWithOpenAI(
+              quiz,
+              openAIKey,
+              onContent,
+            );
+            const indented = parsedQuiz;
             const highlighted = jsonFormatHighlight(
               indented,
               darkMode.matches ? darkJSON : lightJSON,
             );
-            document.querySelector("pre").innerHTML = highlighted;
+            pre.innerHTML = highlighted;
             status.textContent = "Uploading to Qualified...";
             const quizDetails = await postQuizToQualified(
-              parsedQuiz,
+              JSON.parse(parsedQuiz),
               qualifiedKey,
             );
             status.innerHTML = `
@@ -205,7 +219,7 @@ Correct Answer: c) To pass data from parent to child components</textarea
                 target="blank"
               >${quizDetails.title}</a> successfully created!`;
           } catch (err) {
-            status.textContent = `Error: ${err.message}`;
+            status.textContent = `Error: ${err.message || err}`;
           } finally {
             submitBtn.disabled = false;
           }
@@ -217,6 +231,8 @@ Correct Answer: c) To pass data from parent to child components</textarea
         const data = {
           ...quiz,
           $type: "QuizChallenge",
+          time_limit_type: "per_question",
+          question_time_limit_sec: 45,
           questions: quiz.questions.map((e) => ({
             $type: "QuizWeightedChoiceQuestion",
             ...e,
@@ -240,13 +256,10 @@ Correct Answer: c) To pass data from parent to child components</textarea
         return responseData.data;
       };
 
-      const parseQuizWithOpenAI = async (quiz, openAIKey) => {
+      const parseQuizWithOpenAI = async (quiz, openAIKey, onContent) => {
         const endpoint = "https://api.openai.com/v1/chat/completions";
         const content = `Convert the quiz to the following JSON format:
 {
-  "title": "Generate a short title/name for the quiz based on the content (ex: React Quiz)",
-  "summary": "Generate a brief candidate-visible summary of the quiz",
-  "purpose": "Generate an internal motivation for the quiz",
   "questions": [
     {
       "prompt": "The first question prompt",
@@ -266,10 +279,13 @@ Correct Answer: c) To pass data from parent to child components</textarea
         {"label": "The correct option", "value": 1}
       ]
     }
-  ]
+  ],
+  "title": "Generate a short title/name for the quiz based on the content (ex: React Quiz)",
+  "summary": "Generate a brief candidate-visible summary of the quiz",
+  "purpose": "Generate an internal motivation for the quiz"
 }
 
-Don't output anything but valid JSON. Here's the quiz in unstructured text:
+Don't output anything but valid JSON, and make sure all JSON keys are not empty. Here's the quiz in unstructured text:
 
 '''
 ${quiz}
@@ -284,9 +300,10 @@ ${quiz}
           },
           body: JSON.stringify({
             model: "gpt-4-turbo",
-            // model: "gpt-3.5-turbo",
             messages: [{ role: "user", content }],
             temperature: 0,
+            stream: true,
+            response_format: { type: "json_object" },
           }),
         });
 
@@ -294,8 +311,40 @@ ${quiz}
           throw Error(response.statusText);
         }
 
-        const data = await response.json();
-        return JSON.parse(data.choices[0].message.content);
+        let result = "";
+        for (const reader = response.body.getReader(); ; ) {
+          const { value, done } = await reader.read();
+
+          if (done) {
+            break;
+          }
+
+          const chunk = new TextDecoder().decode(value);
+          const subChunks = chunk.split(/^data: (?=[{\[])/gm);
+
+          for (const subChunk of subChunks) {
+            if (!subChunk.trim()) {
+              continue;
+            } else if (subChunk.trim() === "[DONE]") {
+              break;
+            }
+
+            try {
+              const data = JSON.parse(subChunk);
+              const { content } = data.choices[0].delta;
+
+              if (content) {
+                result += content;
+                onContent(result);
+              }
+            } catch (err) {
+              //
+            }
+          }
+        }
+
+        // fix common hallucination with "value" changed to ""
+        return result.replace(/"": (?=\d)/g, '"value": ');
       };
     </script>
   </body>
