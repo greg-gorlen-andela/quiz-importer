@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="description" content="ggorlen.github.io" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Qualified Quiz Importer</title>
+    <script src="https://unpkg.com/json-format-highlight@1.0.4/dist/json-format-highlight.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "DejaVu Sans", sans-serif;
+        margin: auto;
+        line-height: 1.75;
+        max-width: 70ch;
+      }
+
+      pre {
+        line-height: 1.2;
+        max-width: 100%;
+      }
+
+      textarea {
+        height: 20em;
+        width: 100%;
+        max-width: 100%;
+        margin-bottom: 1em;
+      }
+
+      button,
+      textarea,
+      input {
+        padding: 0.6em;
+      }
+
+      label {
+        margin-right: 0.5em;
+      }
+
+      .form-group {
+        display: flex;
+        flex-flow: row wrap;
+        align-items: center;
+      }
+
+      input {
+        flex: 1;
+      }
+
+      form div {
+        margin-bottom: 0.5em;
+      }
+
+      input[type="submit"] {
+        padding: 0.7em;
+        font-size: 1em;
+        cursor: pointer;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Qualified Quiz Importer</h1>
+    </header>
+    <main>
+      <p>
+        This tool imports unstructured input to a Qualified quiz. It uses OpenAI
+        to convert the input to Qualified's quiz format, so inaccuracies can
+        occur. Be sure to check the results.
+      </p>
+      <form>
+        <textarea name="quiz">
+Sample React quiz questions:
+Question 1: In React, what is the purpose of the virtual DOM?
+a) To improve browser performance by reducing memory usage
+b) To directly manipulate the HTML DOM for faster rendering
+c) To provide a lightweight alternative to the HTML DOM
+d) To reconcile changes and efficiently update the actual DOM
+Correct Answer: d) To reconcile changes and efficiently update the actual DOM
+
+Question 2: What is the purpose of props in React?
+a) To manage internal component state
+b) To handle asynchronous operations
+c) To pass data from parent to child components
+d) To define component styles
+
+Correct Answer: c) To pass data from parent to child components</textarea
+        >
+        <div class="form-group">
+          <label for="openai-key">
+            OpenAI API key
+            <sup
+              ><a
+                target="_blank"
+                href="https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key"
+                >(?)</a
+              ></sup
+            >
+          </label>
+          <input
+            name="openai-key"
+            id="openai-key"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label for="qualified-key">
+            Qualified API key
+            <sup
+              ><a
+                target="_blank"
+                href="https://docs.qualified.io/integrations/custom-integrations/api/#generating-an-api-key"
+                >(?)</a
+              ></sup
+            >
+          </label>
+          <input
+            name="qualified-key"
+            id="qualified-key"
+            required
+          />
+        </div>
+        <!--
+        <div class="form-group">
+          <label for="quiz-id"> Quiz ID (leave blank to create new) </label>
+          <input name="quiz-id" id="quiz-id" value="663d7d81b457300045632855" />
+        </div>
+        -->
+        <div>
+          <input type="submit" value="Import" />
+        </div>
+      </form>
+      <small class="status"></small>
+      <div>
+        <pre class="prettyprint lang-js"><code>{}</code></pre>
+      </div>
+    </main>
+    <script>
+      const status = document.querySelector(".status");
+      const submitBtn = document.querySelector("[type='submit']");
+      document
+        .querySelector("form")
+        .addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const openAIKey = event.target.elements["openai-key"].value;
+          const qualifiedKey = event.target.elements["qualified-key"].value;
+          const quizId = event.target.elements["qualified-key"].value;
+          const quiz = event.target.elements["quiz"].textContent;
+          status.textContent = "Converting quiz to Qualified API-ready JSON...";
+          submitBtn.disabled = true;
+
+          try {
+            const parsedQuiz = await parseQuizWithOpenAI(quiz, openAIKey);
+            const indented = JSON.stringify(parsedQuiz, null, 2);
+            const highlighted = jsonFormatHighlight(indented, {
+              keyColor: "#89d",
+            });
+            document.querySelector("pre").innerHTML = highlighted;
+            status.textContent = "Uploading to Qualified...";
+            const quizDetails = await postQuizToQualified(
+              parsedQuiz,
+              qualifiedKey,
+            );
+            status.innerHTML = `<a href="https://www.qualified.io/hire/challenges/${quizDetails.id}" target="blank">Quiz</a> successfully created!`;
+          } catch (err) {
+            status.textContent = `Error: ${err.message}`;
+          } finally {
+            submitBtn.disabled = false;
+          }
+        });
+
+      const postQuizToQualified = async (quiz, qualifiedKey) => {
+        const name = "testing";
+        const url = "https://www.qualified.io/api/v1/challenges";
+        const data = {
+          ...quiz,
+          $type: "QuizChallenge",
+          questions: quiz.questions.map((e) => ({
+            $type: "QuizWeightedChoiceQuestion",
+            ...e,
+          })),
+        };
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            authorization: qualifiedKey,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ data }),
+        });
+        const responseData = await response.json();
+
+        if (!response.ok) {
+          throw Error(responseData.reason);
+        }
+
+        return responseData.data;
+      };
+
+      const parseQuizWithOpenAI = async (quiz, openAIKey) => {
+        const endpoint = "https://api.openai.com/v1/chat/completions";
+        const content = `Convert the quiz to the following JSON format:
+{
+  "title": "Generate a short title/name for the quiz based on the content (ex: React Quiz)",
+  "summary": "Generate a brief candidate-visible summary of the quiz",
+  "purpose": "Generate an internal motivation for the quiz",
+  "questions": [
+    {
+      "prompt": "The first question prompt",
+      "choices": [
+        {"label": "The correct option", "value": 1},
+        {"label": "A distractor", "value": 0},
+        {"label": "Another distractor", "value": 0},
+        {"label": "Another distractor", "value": 0}
+      ]
+    },
+    {
+      "prompt": "The second question prompt",
+      "choices": [
+        {"label": "A distractor", "value": 0},
+        {"label": "Another distractor", "value": 0},
+        {"label": "Another distractor", "value": 0},
+        {"label": "The correct option", "value": 1}
+      ]
+    }
+  ]
+}
+
+Don't output anything but valid JSON. Here's the quiz in unstructured text:
+
+'''
+${quiz}
+'''
+`;
+
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${openAIKey}`,
+          },
+          body: JSON.stringify({
+            model: "gpt-4-turbo",
+            // model: "gpt-3.5-turbo",
+            messages: [{ role: "user", content }],
+            temperature: 0,
+          }),
+        });
+
+        if (!response.ok) {
+          throw Error(response.statusText);
+        }
+
+        const data = await response.json();
+        return JSON.parse(data.choices[0].message.content);
+      };
+    </script>
+  </body>
+</html>
