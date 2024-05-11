@@ -74,6 +74,16 @@
         to convert the input to Qualified's quiz format, so inaccuracies can
         occur. Be sure to check the results and use at your own risk.
       </p>
+      <p>
+        For now, it only handles multiple choice questions with one correct
+        answer.
+      </p>
+      <p>
+        Keys are kept client-side only. View the
+        <a href="https://github.com/greg-gorlen-andela/quiz-importer"
+          >source code</a
+        >.
+      </p>
       <form>
         <textarea name="quiz">
 Sample React quiz questions:
@@ -308,10 +318,14 @@ ${quiz}
         });
 
         if (!response.ok) {
-          throw Error(response.statusText);
+          const {
+            error: { message },
+          } = await response.json();
+          throw Error(message);
         }
 
         let result = "";
+        let lastSubChunk = "";
         for (const reader = response.body.getReader(); ; ) {
           const { value, done } = await reader.read();
 
@@ -329,22 +343,32 @@ ${quiz}
               break;
             }
 
+            let data;
             try {
-              const data = JSON.parse(subChunk);
-              const { content } = data.choices[0].delta;
-
-              if (content) {
-                result += content;
-                onContent(result);
-              }
+              data = JSON.parse(subChunk);
             } catch (err) {
-              //
+              // Hack: sometimes the response splits a chunk into two pieces
+              try {
+                data = JSON.parse(lastSubChunk + subChunk);
+              } catch (err) {
+                console.warn(err);
+                lastSubChunk = subChunk;
+                continue;
+              }
             }
+
+            const { content } = data.choices[0].delta;
+
+            if (content) {
+              result += content;
+              onContent(result);
+            }
+
+            lastSubChunk = subChunk;
           }
         }
 
-        // fix common hallucination with "value" changed to ""
-        return result.replace(/"": (?=\d)/g, '"value": ');
+        return result;
       };
     </script>
   </body>

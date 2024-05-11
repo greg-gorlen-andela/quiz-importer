@@ -8,15 +8,14 @@ For now, it only handles multiple choice questions with one correct answer.
 
 ### TODO
 
-- Stream JSON as it's created by OpenAI
 - Allow appending to an existing quiz
-- Add more meta fields like difficulty
 - Add support for other quiz types than multiple choice
 - cancel button
 - set query params on submit or keys to localhost
-- handle color mode changes
-- Break import into 2 steps and make json contenteditable
+- Break import into 2 steps and make json contenteditable?
 - use Andela styling
 - could also accept chatGPT conversation URL as input
 - could offer a userscript-created button in ChatGPT to pop open a new tab to run the request via query params
+- checkboxes to show/hide keys
 - alternate approach: run the backend on another server/localhost and have the button in ChatGPT send the request there to handle the API calls
+- Add more meta fields like difficulty?
